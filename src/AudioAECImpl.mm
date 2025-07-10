@@ -13,7 +13,7 @@ bool AudioAECImpl::start(AudioCallback callback) {
 
     AudioComponentDescription desc = {
         kAudioUnitType_Output,
-        kAudioUnitSubType_VoiceProcessingIO,  // 使用VoiceProcessingIO用于AEC
+        kAudioUnitSubType_VoiceProcessingIO,
         kAudioUnitManufacturer_Apple,
         0,
         0
@@ -31,7 +31,7 @@ bool AudioAECImpl::start(AudioCallback callback) {
         return false;
     }
 
-    // 设置音频格式 - 使用标准配置
+    // 设置音频格式
     AudioStreamBasicDescription format = { 0 };
     format.mSampleRate = 48000;
     format.mFormatID = kAudioFormatLinearPCM;
@@ -84,7 +84,7 @@ bool AudioAECImpl::start(AudioCallback callback) {
         return false;
     }
 
-    // 启用输出（VoiceProcessingIO需要输出才能正常工作）
+    // 启用输出
     status = AudioUnitSetProperty(audioUnit_,
                                  kAudioOutputUnitProperty_EnableIO,
                                  kAudioUnitScope_Output,
@@ -96,19 +96,59 @@ bool AudioAECImpl::start(AudioCallback callback) {
         return false;
     }
 
-    // 设置渲染回调（这是关键）
-    AURenderCallbackStruct callbackStruct = { 0 };
-    callbackStruct.inputProc = RenderCallback;
-    callbackStruct.inputProcRefCon = this;
+    // 设置缓冲区大小
+    UInt32 bufferSize = 512;
+    status = AudioUnitSetProperty(audioUnit_,
+                                 kAudioUnitProperty_MaximumFramesPerSlice,
+                                 kAudioUnitScope_Global,
+                                 0,
+                                 &bufferSize,
+                                 sizeof(bufferSize));
+    if (status != noErr) {
+        std::cerr << "设置缓冲区大小失败，错误码: " << status << std::endl;
+    }
+
+    // 启用AGC
+    UInt32 enableAGC = 1;
+    status = AudioUnitSetProperty(audioUnit_,
+                                 kAUVoiceIOProperty_VoiceProcessingEnableAGC,
+                                 kAudioUnitScope_Global,
+                                 0,
+                                 &enableAGC,
+                                 sizeof(enableAGC));
+    if (status != noErr) {
+        std::cerr << "启用AGC失败，错误码: " << status << std::endl;
+    }
+
+    // 设置输入回调（关键：VoiceProcessingIO需要输入回调来获取麦克风数据）
+    AURenderCallbackStruct inputCallbackStruct = { 0 };
+    inputCallbackStruct.inputProc = InputRenderCallback;
+    inputCallbackStruct.inputProcRefCon = this;
+
+    status = AudioUnitSetProperty(audioUnit_,
+                                 kAudioOutputUnitProperty_SetInputCallback,
+                                 kAudioUnitScope_Global,
+                                 0,
+                                 &inputCallbackStruct,
+                                 sizeof(inputCallbackStruct));
+    if (status != noErr) {
+        std::cerr << "设置输入回调失败，错误码: " << status << std::endl;
+        return false;
+    }
+
+    // 设置输出渲染回调（提供静音输出）
+    AURenderCallbackStruct outputCallbackStruct = { 0 };
+    outputCallbackStruct.inputProc = RenderCallback;
+    outputCallbackStruct.inputProcRefCon = this;
 
     status = AudioUnitSetProperty(audioUnit_,
                                  kAudioUnitProperty_SetRenderCallback,
                                  kAudioUnitScope_Input,
                                  0,
-                                 &callbackStruct,
-                                 sizeof(callbackStruct));
+                                 &outputCallbackStruct,
+                                 sizeof(outputCallbackStruct));
     if (status != noErr) {
-        std::cerr << "设置渲染回调失败，错误码: " << status << std::endl;
+        std::cerr << "设置输出渲染回调失败，错误码: " << status << std::endl;
         return false;
     }
 
@@ -140,13 +180,13 @@ void AudioAECImpl::stop() {
     }
 }
 
-// 渲染回调函数 - 这是唯一需要的回调
-OSStatus AudioAECImpl::RenderCallback(void* inRefCon,
-                                      AudioUnitRenderActionFlags* ioActionFlags,
-                                      const AudioTimeStamp* inTimeStamp,
-                                      UInt32 inBusNumber,
-                                      UInt32 inNumberFrames,
-                                      AudioBufferList* ioData) {
+// 输入回调函数（获取麦克风数据）
+OSStatus AudioAECImpl::InputRenderCallback(void* inRefCon,
+                                           AudioUnitRenderActionFlags* ioActionFlags,
+                                           const AudioTimeStamp* inTimeStamp,
+                                           UInt32 inBusNumber,
+                                           UInt32 inNumberFrames,
+                                           AudioBufferList* ioData) {
     auto* self = static_cast<AudioAECImpl*>(inRefCon);
 
     // 动态分配缓冲区
@@ -158,7 +198,7 @@ OSStatus AudioAECImpl::RenderCallback(void* inRefCon,
     bufferList.mBuffers[0].mDataByteSize = sizeof(float) * inNumberFrames;
     bufferList.mBuffers[0].mNumberChannels = 1;
 
-    // 获取输入数据（经过AEC处理）
+    // 获取输入数据
     OSStatus status = AudioUnitRender(self->audioUnit_,
                                       ioActionFlags,
                                       inTimeStamp,
@@ -167,18 +207,35 @@ OSStatus AudioAECImpl::RenderCallback(void* inRefCon,
                                       &bufferList);
 
     if (status == noErr && self->callback_) {
-        // 简单的音频处理：限制音量范围
-        // for (UInt32 i = 0; i < inNumberFrames; i++) {
-        //     // 限制音频范围在 -1.0 到 1.0 之间
-        //     if (data[i] > 1.0f) data[i] = 1.0f;
-        //     if (data[i] < -1.0f) data[i] = -1.0f;
-        // }
+        // 检查数据是否为零
+        bool hasNonZeroData = false;
+        for (UInt32 i = 0; i < inNumberFrames && i < 5; i++) {
+            if (std::abs(data[i]) > 1e-6) {
+                hasNonZeroData = true;
+                break;
+            }
+        }
+        
+        if (hasNonZeroData) {
+            std::cout << "[输入回调调试] 检测到非零音频数据，前5个样本: " 
+                     << data[0] << "," << data[1] << "," << data[2] << "," << data[3] << "," << data[4] << std::endl;
+        }
         
         self->callback_(data.data(), inNumberFrames);
     } else if (status != noErr) {
-        std::cerr << "AudioUnitRender失败，错误码: " << status << std::endl;
+        std::cerr << "输入回调AudioUnitRender失败，错误码: " << status << std::endl;
     }
 
+    return noErr;
+}
+
+// 输出渲染回调函数（提供静音输出）
+OSStatus AudioAECImpl::RenderCallback(void* inRefCon,
+                                      AudioUnitRenderActionFlags* ioActionFlags,
+                                      const AudioTimeStamp* inTimeStamp,
+                                      UInt32 inBusNumber,
+                                      UInt32 inNumberFrames,
+                                      AudioBufferList* ioData) {
     // 为输出提供静音数据
     if (ioData && ioData->mNumberBuffers > 0) {
         for (UInt32 i = 0; i < ioData->mNumberBuffers; i++) {

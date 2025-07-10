@@ -18,9 +18,9 @@ struct WAVHeader {
     uint16_t audioFormat = 1; // PCM
     uint16_t numChannels = 1; // 单声道
     uint32_t sampleRate = 48000;
-    uint32_t byteRate = 48000 * 4; // sampleRate * numChannels * bitsPerSample/8
-    uint16_t blockAlign = 4; // numChannels * bitsPerSample/8
-    uint16_t bitsPerSample = 32;
+    uint32_t byteRate = 48000 * 2; // sampleRate * numChannels * bitsPerSample/8 (16位)
+    uint16_t blockAlign = 2; // numChannels * bitsPerSample/8 (16位)
+    uint16_t bitsPerSample = 16; // 改为16位整型
     char data[4] = {'d', 'a', 't', 'a'};
     uint32_t dataChunkSize;
 };
@@ -227,6 +227,14 @@ int main() {
         std::cout << "音频数据有效，最大绝对值: " << maxVal << std::endl;
     }
 
+    // 将float数据转换为16位整型PCM
+    std::vector<int16_t> pcmBuffer(audioBuffer.size());
+    for (size_t i = 0; i < audioBuffer.size(); ++i) {
+        // 限制在[-1.0, 1.0]范围内，然后缩放到16位整型范围
+        float sample = std::max(-1.0f, std::min(1.0f, audioBuffer[i]));
+        pcmBuffer[i] = static_cast<int16_t>(sample * 32767.0f);
+    }
+
     // 写入WAV文件
     std::string filename = "recorded_audio_aec.wav";
     std::ofstream file(filename, std::ios::binary);
@@ -238,22 +246,23 @@ int main() {
 
     // 准备WAV文件头
     WAVHeader header;
-    header.dataChunkSize = audioBuffer.size() * sizeof(float);
+    header.dataChunkSize = pcmBuffer.size() * sizeof(int16_t);
     header.chunkSize = 36 + header.dataChunkSize;
 
     // 写入文件头
     file.write(reinterpret_cast<const char*>(&header), sizeof(WAVHeader));
 
-    // 写入音频数据
-    file.write(reinterpret_cast<const char*>(audioBuffer.data()), 
-               audioBuffer.size() * sizeof(float));
+    // 写入音频数据（16位整型PCM）
+    file.write(reinterpret_cast<const char*>(pcmBuffer.data()), 
+               pcmBuffer.size() * sizeof(int16_t));
 
     file.close();
 
     std::cout << "AEC音频已保存到: " << filename << std::endl;
     std::cout << "录制时长: " << (float)audioBuffer.size() / sampleRate << " 秒" << std::endl;
     std::cout << "采样点数: " << audioBuffer.size() << std::endl;
-    std::cout << "文件大小: " << (36 + audioBuffer.size() * sizeof(float)) << " 字节" << std::endl;
+    std::cout << "文件大小: " << (36 + pcmBuffer.size() * sizeof(int16_t)) << " 字节" << std::endl;
+    std::cout << "格式: 16位整型PCM (兼容性更好)" << std::endl;
 
     return 0;
 }
