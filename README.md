@@ -2,6 +2,10 @@
 
 基于macOS的音频回声消除（Acoustic Echo Cancellation）项目，使用VoiceProcessingIO音频单元实现高质量的音频录制和回声消除功能。
 
+## VoiceProcessingIO的局限
+只要你用VoiceProcessingIO做AEC，系统就会自动“保护”麦克风输入，抑制扬声器音量，防止回声。
+这是Apple的安全策略，防止回声泄露到麦克风，无法通过AudioUnit参数关闭。
+
 ## 项目概述
 
 本项目实现了在macOS系统上使用VoiceProcessingIO音频单元进行音频录制，具备以下特性：
