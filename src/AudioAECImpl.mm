@@ -193,21 +193,7 @@ OSStatus AudioAECImpl::InputRenderCallback(void* inRefCon,
                                       inNumberFrames,
                                       &bufferList);
 
-    if (status == noErr && self->callback_) {
-        // 检查数据是否为零
-        bool hasNonZeroData = false;
-        for (UInt32 i = 0; i < inNumberFrames && i < 5; i++) {
-            if (std::abs(data[i]) > 1e-6) {
-                hasNonZeroData = true;
-                break;
-            }
-        }
-        
-        if (hasNonZeroData) {
-            std::cout << "[输入回调调试] 检测到非零音频数据，前5个样本: " 
-                     << data[0] << "," << data[1] << "," << data[2] << "," << data[3] << "," << data[4] << std::endl;
-        }
-        
+    if (status == noErr && self->callback_) {    
         self->callback_(data.data(), inNumberFrames);
     } else if (status != noErr) {
         std::cerr << "输入回调AudioUnitRender失败，错误码: " << status << std::endl;
