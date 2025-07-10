@@ -109,6 +109,7 @@ int main() {
     
     std::cout << "=== 音频AEC录制程序 ===" << std::endl;
     std::cout << "使用VoiceProcessingIO进行回声消除" << std::endl;
+    std::cout << "采样率: " << sampleRate << " Hz" << std::endl;
     
     std::cout << "\n开始录制音频，持续" << recordDuration << "秒..." << std::endl;
     std::cout << "AEC功能已启用，将自动消除回声" << std::endl;

@@ -17,13 +17,6 @@ private:
     AudioUnit audioUnit_;
     AudioCallback callback_;
 
-    static OSStatus InputRenderCallback(void* inRefCon,
-                                        AudioUnitRenderActionFlags* ioActionFlags,
-                                        const AudioTimeStamp* inTimeStamp,
-                                        UInt32 inBusNumber,
-                                        UInt32 inNumberFrames,
-                                        AudioBufferList* ioData);
-
     static OSStatus RenderCallback(void* inRefCon,
                                    AudioUnitRenderActionFlags* ioActionFlags,
                                    const AudioTimeStamp* inTimeStamp,
