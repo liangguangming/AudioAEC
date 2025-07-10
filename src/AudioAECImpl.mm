@@ -76,7 +76,7 @@ bool AudioAECImpl::start(AudioCallback callback) {
     status = AudioUnitSetProperty(audioUnit_,
                                  kAudioOutputUnitProperty_EnableIO,
                                  kAudioUnitScope_Input,
-                                 1, // enable input
+                                 1, // enable input (bus 1)
                                  &enableIO,
                                  sizeof(enableIO));
     if (status != noErr) {
@@ -84,15 +84,16 @@ bool AudioAECImpl::start(AudioCallback callback) {
         return false;
     }
 
-    // 启用输出
+    // 禁用输出
+    UInt32 disableIO = 0;
     status = AudioUnitSetProperty(audioUnit_,
                                  kAudioOutputUnitProperty_EnableIO,
                                  kAudioUnitScope_Output,
-                                 0, // enable output
-                                 &enableIO,
-                                 sizeof(enableIO));
+                                 0, // disable output (bus 0)
+                                 &disableIO,
+                                 sizeof(disableIO));
     if (status != noErr) {
-        std::cerr << "启用输出失败，错误码: " << status << std::endl;
+        std::cerr << "禁用输出失败，错误码: " << status << std::endl;
         return false;
     }
 
@@ -120,7 +121,7 @@ bool AudioAECImpl::start(AudioCallback callback) {
         std::cerr << "启用AGC失败，错误码: " << status << std::endl;
     }
 
-    // 设置输入回调（关键：VoiceProcessingIO需要输入回调来获取麦克风数据）
+    // 设置输入回调（只设置输入回调，不设置输出回调）
     AURenderCallbackStruct inputCallbackStruct = { 0 };
     inputCallbackStruct.inputProc = InputRenderCallback;
     inputCallbackStruct.inputProcRefCon = this;
@@ -136,21 +137,7 @@ bool AudioAECImpl::start(AudioCallback callback) {
         return false;
     }
 
-    // 设置输出渲染回调（提供静音输出）
-    AURenderCallbackStruct outputCallbackStruct = { 0 };
-    outputCallbackStruct.inputProc = RenderCallback;
-    outputCallbackStruct.inputProcRefCon = this;
-
-    status = AudioUnitSetProperty(audioUnit_,
-                                 kAudioUnitProperty_SetRenderCallback,
-                                 kAudioUnitScope_Input,
-                                 0,
-                                 &outputCallbackStruct,
-                                 sizeof(outputCallbackStruct));
-    if (status != noErr) {
-        std::cerr << "设置输出渲染回调失败，错误码: " << status << std::endl;
-        return false;
-    }
+    // 不设置输出回调
 
     // 初始化音频单元
     status = AudioUnitInitialize(audioUnit_);
@@ -166,7 +153,7 @@ bool AudioAECImpl::start(AudioCallback callback) {
         return false;
     }
 
-    std::cout << "VoiceProcessingIO音频单元启动成功，AEC功能已启用" << std::endl;
+    std::cout << "VoiceProcessingIO音频单元启动成功，AEC功能已启用，系统扬声器输出不受影响" << std::endl;
     return true;
 }
 
